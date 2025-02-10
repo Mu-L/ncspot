@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
@@ -11,7 +12,7 @@ use signal_hook::{consts::SIGHUP, consts::SIGTERM, iterator::Signals};
 
 use crate::command::Command;
 use crate::commands::CommandManager;
-use crate::config::Config;
+use crate::config::{Config, PlaybackState};
 use crate::events::{Event, EventManager};
 use crate::library::Library;
 use crate::queue::Queue;
@@ -21,7 +22,7 @@ use crate::{authentication, ui, utils};
 use crate::{command, queue, spotify};
 
 #[cfg(feature = "mpris")]
-use crate::mpris::{self, MprisManager};
+use crate::mpris::MprisManager;
 
 #[cfg(unix)]
 use crate::ipc::{self, IpcSocket};
@@ -43,7 +44,6 @@ pub fn setup_logging(filename: &Path) -> Result<(), fern::InitError> {
         .level(log::LevelFilter::Trace)
         // Set runtime log level for modules
         .level_for("librespot", log::LevelFilter::Debug)
-        .level_for("cursive_buffered_backend", log::LevelFilter::Debug)
         // Output to stdout, files, and other Dispatch configurations
         .chain(fern::log_file(filename)?)
         // Apply globally
@@ -68,9 +68,6 @@ pub struct Application {
     /// Internally shared
     event_manager: EventManager,
     /// An IPC implementation using the D-Bus MPRIS protocol, used to control and inspect ncspot.
-    #[cfg(feature = "mpris")]
-    mpris_manager: MprisManager,
-    /// An IPC implementation using a Unix domain socket, used to control and inspect ncspot.
     #[cfg(unix)]
     ipc: Option<IpcSocket>,
     /// The object to render to the terminal.
@@ -83,7 +80,7 @@ impl Application {
     /// # Arguments
     ///
     /// * `configuration_file_path` - Relative path to the configuration file inside the base path
-    pub fn new(configuration_file_path: Option<String>) -> Result<Self, String> {
+    pub fn new(configuration_file_path: Option<String>) -> Result<Self, Box<dyn Error>> {
         // Things here may cause the process to abort; we must do them before creating curses
         // windows otherwise the error message will not be seen by a user
 
@@ -114,8 +111,8 @@ impl Application {
 
         let event_manager = EventManager::new(cursive.cb_sink().clone());
 
-        let spotify =
-            spotify::Spotify::new(event_manager.clone(), credentials, configuration.clone());
+        let mut spotify =
+            spotify::Spotify::new(event_manager.clone(), credentials, configuration.clone())?;
 
         let library = Arc::new(Library::new(
             event_manager.clone(),
@@ -130,12 +127,36 @@ impl Application {
         ));
 
         #[cfg(feature = "mpris")]
-        let mpris_manager = mpris::MprisManager::new(
+        let mpris_manager = MprisManager::new(
             event_manager.clone(),
             queue.clone(),
             library.clone(),
             spotify.clone(),
         );
+
+        #[cfg(feature = "mpris")]
+        spotify.set_mpris(mpris_manager.clone());
+
+        // Load the last played track into the player
+        let playback_state = configuration.state().playback_state.clone();
+        let queue_state = configuration.state().queuestate.clone();
+
+        if let Some(playable) = queue.get_current() {
+            spotify.load(
+                &playable,
+                playback_state == PlaybackState::Playing,
+                queue_state.track_progress.as_millis() as u32,
+            );
+            spotify.update_track();
+            match playback_state {
+                PlaybackState::Stopped => {
+                    spotify.stop();
+                }
+                PlaybackState::Paused | PlaybackState::Playing | PlaybackState::Default => {
+                    spotify.pause();
+                }
+            }
+        }
 
         #[cfg(unix)]
         let ipc = if let Ok(runtime_directory) = utils::create_runtime_directory() {
@@ -205,8 +226,6 @@ impl Application {
             queue,
             spotify,
             event_manager,
-            #[cfg(feature = "mpris")]
-            mpris_manager,
             #[cfg(unix)]
             ipc,
             cursive,
@@ -237,9 +256,6 @@ impl Application {
                         trace!("event received: {:?}", state);
                         self.spotify.update_status(state.clone());
 
-                        #[cfg(feature = "mpris")]
-                        self.mpris_manager.update();
-
                         #[cfg(unix)]
                         if let Some(ref ipc) = self.ipc {
                             ipc.publish(&state, self.queue.get_current());
@@ -252,7 +268,16 @@ impl Application {
                     Event::Queue(event) => {
                         self.queue.handle_event(event);
                     }
-                    Event::SessionDied => self.spotify.start_worker(None),
+                    Event::SessionDied => {
+                        if self.spotify.start_worker(None).is_err() {
+                            let data: UserData = self
+                                .cursive
+                                .user_data()
+                                .cloned()
+                                .expect("user data should be set");
+                            data.cmd.handle(&mut self.cursive, Command::Quit);
+                        };
+                    }
                     Event::IpcInput(input) => match command::parse(&input) {
                         Ok(commands) => {
                             if let Some(data) = self.cursive.user_data::<UserData>().cloned() {

@@ -113,14 +113,14 @@ impl CommandManager {
         match cmd {
             Command::Noop => Ok(None),
             Command::Quit => {
-                let queue = self.queue.queue.read().expect("can't readlock queue");
-                self.config.with_state_mut(move |mut s| {
+                let queue = self.queue.queue.read().unwrap();
+                self.config.with_state_mut(move |s| {
                     debug!(
                         "saving state, {} items, current track: {:?}",
                         queue.len(),
                         self.queue.get_current_index()
                     );
-                    s.queuestate.queue = queue.clone();
+                    s.queuestate.queue.clone_from(&queue);
                     s.queuestate.random_order = self.queue.get_random_order();
                     s.queuestate.current_track = self.queue.get_current_index();
                     s.queuestate.track_progress = self.spotify.get_current_progress();
@@ -196,7 +196,7 @@ impl CommandManager {
                     .spotify
                     .volume()
                     .saturating_add(VOLUME_PERCENT * amount);
-                self.spotify.set_volume(volume);
+                self.spotify.set_volume(volume, true);
                 Ok(None)
             }
             Command::VolumeDown(amount) => {
@@ -205,7 +205,7 @@ impl CommandManager {
                     .volume()
                     .saturating_sub(VOLUME_PERCENT * amount);
                 debug!("vol {}", volume);
-                self.spotify.set_volume(volume);
+                self.spotify.set_volume(volume, true);
                 Ok(None)
             }
             Command::Help => {
@@ -238,8 +238,8 @@ impl CommandManager {
             }
             Command::NewPlaylist(name) => {
                 match self.spotify.api.create_playlist(name, None, None) {
-                    Some(_) => self.library.update_library(),
-                    None => error!("could not create playlist {}", name),
+                    Ok(_) => self.library.update_library(),
+                    Err(_) => error!("could not create playlist {}", name),
                 }
                 Ok(None)
             }

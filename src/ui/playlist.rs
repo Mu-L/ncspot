@@ -25,7 +25,7 @@ pub struct PlaylistView {
 impl PlaylistView {
     pub fn new(queue: Arc<Queue>, library: Arc<Library>, playlist: &Playlist) -> Self {
         let mut playlist = playlist.clone();
-        playlist.load_tracks(queue.get_spotify());
+        playlist.load_tracks(&queue.get_spotify());
 
         if let Some(order) = library.cfg.state().playlist_orders.get(&playlist.id) {
             playlist.sort(&order.key, &order.direction);
@@ -93,7 +93,7 @@ impl ViewExt for PlaylistView {
         }
 
         if let Command::Sort(key, direction) = cmd {
-            self.library.cfg.with_state_mut(|mut state| {
+            self.library.cfg.with_state_mut(|state| {
                 let order = crate::config::SortingOrder {
                     key: key.clone(),
                     direction: direction.clone(),

@@ -61,7 +61,7 @@ impl ContextMenu {
         let mut list_select: SelectView<Playlist> = SelectView::new();
         let current_user_id = library.user_id.as_ref().unwrap();
 
-        for list in library.playlists().iter() {
+        for list in library.playlists.read().unwrap().iter() {
             if current_user_id == &list.owner_id || list.collaborative {
                 list_select.add_item(list.name.clone(), list.clone());
             }
@@ -305,7 +305,7 @@ impl ContextMenu {
                     }
                     #[cfg(feature = "share_clipboard")]
                     ContextMenuAction::ShareUrl(url) => {
-                        write_share(url.to_string());
+                        write_share(url.to_string()).ok();
                     }
                     ContextMenuAction::AddToPlaylist(track) => {
                         let dialog =
@@ -375,7 +375,7 @@ impl ViewExt for SelectArtistActionMenu {
     }
 }
 
-fn handle_move_command<T: 'static>(
+fn handle_move_command<T: Send + Sync + 'static>(
     sel: &mut Modal<Dialog>,
     s: &mut Cursive,
     cmd: &Command,

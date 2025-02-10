@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::{fs, process};
 
 use cursive::theme::Theme;
 use log::{debug, error};
-use ncspot::CONFIGURATION_FILE_NAME;
+use ncspot::{CONFIGURATION_FILE_NAME, USER_STATE_FILE_NAME};
 use platform_dirs::AppDirs;
 
 use crate::command::{SortDirection, SortKey};
@@ -14,7 +14,6 @@ use crate::model::playable::Playable;
 use crate::queue;
 use crate::serialization::{Serializer, CBOR, TOML};
 
-pub const CLIENT_ID: &str = "d420a117a32841c2b3474932e49fb54b";
 pub const CACHE_VERSION: u16 = 1;
 pub const DEFAULT_COMMAND_KEY: char = ':';
 
@@ -101,14 +100,7 @@ pub struct ConfigValues {
     pub statusbar_format: Option<String>,
     pub library_tabs: Option<Vec<LibraryTab>>,
     pub hide_display_names: Option<bool>,
-    pub credentials: Option<Credentials>,
-}
-
-/// Commands used to obtain user credentials automatically.
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct Credentials {
-    pub username_cmd: Option<String>,
-    pub password_cmd: Option<String>,
+    pub ap_port: Option<u16>,
 }
 
 /// The ncspot theme.
@@ -209,7 +201,7 @@ impl Config {
         });
 
         let mut userstate = {
-            let path = config_path("userstate.cbor");
+            let path = config_path(USER_STATE_FILE_NAME);
             CBOR.load_or_generate_default(path, || Ok(UserState::default()), true)
                 .expect("could not load user state")
         };
@@ -233,36 +225,45 @@ impl Config {
         }
     }
 
+    /// Get the user configuration values.
     pub fn values(&self) -> RwLockReadGuard<ConfigValues> {
-        self.values.read().expect("can't readlock config values")
+        self.values.read().unwrap()
     }
 
+    /// Get the runtime user state values.
     pub fn state(&self) -> RwLockReadGuard<UserState> {
-        self.state.read().expect("can't readlock user state")
+        self.state.read().unwrap()
     }
 
+    /// Modify the internal user state through a shared reference using a closure.
     pub fn with_state_mut<F>(&self, cb: F)
     where
-        F: Fn(RwLockWriteGuard<UserState>),
+        F: Fn(&mut UserState),
     {
-        let state_guard = self.state.write().expect("can't writelock user state");
-        cb(state_guard);
+        let mut state_guard = self.state.write().unwrap();
+        cb(&mut state_guard);
     }
 
-    pub fn save_state(&self) {
-        // update cache version number
-        self.with_state_mut(|mut state| state.cache_version = CACHE_VERSION);
+    /// Update the version number of the runtime user state. This should be done before saving it to
+    /// disk.
+    fn update_state_cache_version(&self) {
+        self.with_state_mut(|state| state.cache_version = CACHE_VERSION);
+    }
 
-        let path = config_path("userstate.cbor");
+    /// Save runtime state to the user configuration directory.
+    pub fn save_state(&self) {
+        self.update_state_cache_version();
+
+        let path = config_path(USER_STATE_FILE_NAME);
         debug!("saving user state to {}", path.display());
-        if let Err(e) = CBOR.write(path, self.state().clone()) {
+        if let Err(e) = CBOR.write(path, &*self.state()) {
             error!("Could not save user state: {}", e);
         }
     }
 
+    /// Create a [Theme] from the user supplied theme in the configuration file.
     pub fn build_theme(&self) -> Theme {
-        let theme = &self.values().theme;
-        crate::theme::load(theme)
+        crate::theme::load(&self.values().theme)
     }
 
     /// Attempt to reload the configuration from the configuration file.

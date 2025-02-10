@@ -5,11 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.2]
+
+### Added
+
+- `%artist` formatting option to only show single artist name
+- Build release for aarch64 on Linux
+
+### Removed
+
+- Support for basic password managers as OAuth2 is now the only supported authentication flow
+
+### Fixed
+
+- Missing automatic man page generation for subcommands
+- Bug causing forced password reset after using `ncpsot`
+
+## [1.2.1] - 2024-10-31
+
+### Fixed
+
+- Fix error in fetching of window size leading to crashes with cover feature
+
+## [1.2.0] - 2024-10-15
+
+### Added
+
+- Emit MPRIS `Seeked` signal
+
+### Fixed
+
+- Switch to OAuth2 login mechanism
+- Uses librespot 0.5.0 which containts many bugfixes, including:
+  - Files are downloaded via CDN, which should fix playback of some podcasts
+  - Better access point connection handling, hopefully resulting in faster startups
+  - Fix frequent disconnections for some users
+
+## [1.1.2] - 2024-07-16
+
+### Fixed
+
+- Handling localized Spotify URLs
+- Fetching playlists did not work for some users unless they set a playlist image
+
+## [1.1.1] - 2024-05-10
+
+### Added
+- `ap_port` configuration variable to choose what Spotify access point port to use
+- Instructions for installation with `snap`
+
+### Fixed
+
+- Not all requests respecting proxy settings as configured with environment variables
+- MPRIS controls showing unknown artist/title on GNOME
+
+## [1.1.0] - 2024-03-05
+
+### Added
+
+- Instructions for installation with `winget`
+- Automatic macOS arm64 builds to releases
 
 ### Fixed
 
 - Crash on Android (Termux) due to unknown user runtime directory
+- Crash due to misconfigured or unavailable audio backend
+- Volume changes from within `ncspot` not being reflected in the desktop notification
+- Crash when `ncspot` tried to update a valid API token or the update failed
+- Complete freeze when `ncspot` was running for a long time
 
 ## [1.0.0] - 2023-12-16
 
@@ -18,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Special color for unavailable items
 - Changelog with all the relevant user-facing changes to the project
 - `info` command line subcommand to show platform specific information
-- Append Git commit hash to version string
+- Git commit hash to version string to simplify determining the exact version
 
 ### Changed
 
@@ -35,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An unlikely crash when the UNIX IPC socket is removed before `ncspot` is closed
 - Guaranteed crash while quiting `ncspot` when using MPRIS
 - MPRIS volume not being updated when given numbers smaller than 0 or larger than 1
-- Allow previous track via MPRIS if first track in queue is playing
+- Play previous song command not working when first item in the queue was playing
 
 ## [0.13.4] - 2023-07-24
 
@@ -168,7 +231,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Albums with more than 50 songs not showing all the songs when viewed in the library
 - Bug that could cause items to not load until the screen is filled on bigger screens
 
-[Unreleased]: https://github.com/hrkfdn/ncspot/compare/v1.0.0...HEAD
+[1.2.2]: https://github.com/hrkfdn/ncspot/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/hrkfdn/ncspot/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/hrkfdn/ncspot/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/hrkfdn/ncspot/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/hrkfdn/ncspot/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/hrkfdn/ncspot/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/hrkfdn/ncspot/compare/v0.13.4...v1.0.0
 [0.13.4]: https://github.com/hrkfdn/ncspot/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/hrkfdn/ncspot/compare/v0.13.2...v0.13.3

@@ -1,3 +1,6 @@
+#![allow(clippy::use_self)]
+
+use log::info;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -5,8 +8,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, Value};
-use zbus::{dbus_interface, ConnectionBuilder};
+use zbus::{connection, interface};
 
 use crate::application::ASYNC_RUNTIME;
 use crate::library::Library;
@@ -28,34 +32,34 @@ use crate::{
 
 struct MprisRoot {}
 
-#[dbus_interface(name = "org.mpris.MediaPlayer2")]
+#[interface(name = "org.mpris.MediaPlayer2")]
 impl MprisRoot {
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_quit(&self) -> bool {
         false
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_raise(&self) -> bool {
         false
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn has_tracklist(&self) -> bool {
         true
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn identity(&self) -> &str {
         "ncspot"
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn supported_uri_schemes(&self) -> Vec<String> {
         vec!["spotify".to_string()]
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn supported_mime_types(&self) -> Vec<String> {
         Vec::new()
     }
@@ -72,9 +76,9 @@ struct MprisPlayer {
     spotify: Spotify,
 }
 
-#[dbus_interface(name = "org.mpris.MediaPlayer2.Player")]
+#[interface(name = "org.mpris.MediaPlayer2.Player")]
 impl MprisPlayer {
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn playback_status(&self) -> &str {
         match self.spotify.get_current_status() {
             PlayerEvent::Playing(_) | PlayerEvent::FinishedTrack => "Playing",
@@ -83,7 +87,7 @@ impl MprisPlayer {
         }
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn loop_status(&self) -> &str {
         match self.queue.get_repeat() {
             RepeatSetting::None => "None",
@@ -92,7 +96,7 @@ impl MprisPlayer {
         }
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn set_loop_status(&self, loop_status: &str) {
         let setting = match loop_status {
             "Track" => RepeatSetting::RepeatTrack,
@@ -103,22 +107,22 @@ impl MprisPlayer {
         self.event.trigger();
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn rate(&self) -> f64 {
         1.0
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn minimum_rate(&self) -> f64 {
         1.0
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn maximum_rate(&self) -> f64 {
         1.0
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn metadata(&self) -> HashMap<String, Value> {
         let mut hm = HashMap::new();
 
@@ -137,6 +141,7 @@ impl MprisPlayer {
                         .track(&track.id.unwrap_or_default())
                         .as_ref()
                         .map(|t| Playable::Track(t.into()))
+                        .ok()
                 }
             }
             Playable::Episode(episode) => Some(Playable::Episode(episode)),
@@ -252,65 +257,68 @@ impl MprisPlayer {
         hm
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn shuffle(&self) -> bool {
         self.queue.get_shuffle()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn set_shuffle(&self, shuffle: bool) {
         self.queue.set_shuffle(shuffle);
         self.event.trigger();
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn volume(&self) -> f64 {
         self.spotify.volume() as f64 / 65535_f64
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn set_volume(&self, mut volume: f64) {
         log::info!("set volume: {volume}");
         volume = volume.clamp(0.0, 1.0);
         let vol = (VOLUME_PERCENT as f64) * volume * 100.0;
-        self.spotify.set_volume(vol as u16);
+        self.spotify.set_volume(vol as u16, false);
         self.event.trigger();
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn position(&self) -> i64 {
         self.spotify.get_current_progress().as_micros() as i64
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_go_next(&self) -> bool {
         self.queue.next_index().is_some()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_go_previous(&self) -> bool {
         self.queue.get_current().is_some()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_play(&self) -> bool {
         self.queue.get_current().is_some()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_pause(&self) -> bool {
         self.queue.get_current().is_some()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_seek(&self) -> bool {
         self.queue.get_current().is_some()
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     fn can_control(&self) -> bool {
         self.queue.get_current().is_some()
     }
+
+    #[zbus(signal)]
+    async fn seeked(context: &SignalEmitter<'_>, position: &i64) -> zbus::Result<()>;
 
     fn next(&self) {
         self.queue.next(true)
@@ -371,9 +379,8 @@ impl MprisPlayer {
     fn open_uri(&self, uri: &str) {
         let spotify_url = if uri.contains("open.spotify.com") {
             SpotifyUrl::from_url(uri)
-        } else if UriType::from_uri(uri).is_some() {
+        } else if let Ok(uri_type) = uri.parse() {
             let id = &uri[uri.rfind(':').unwrap_or(0) + 1..uri.len()];
-            let uri_type = UriType::from_uri(uri).unwrap();
             Some(SpotifyUrl::new(id, uri_type))
         } else {
             None
@@ -386,7 +393,7 @@ impl MprisPlayer {
         let uri_type = spotify_url.map(|s| s.uri_type);
         match uri_type {
             Some(UriType::Album) => {
-                if let Some(a) = self.spotify.api.album(&id) {
+                if let Ok(a) = self.spotify.api.album(&id) {
                     if let Some(t) = &Album::from(&a).tracks {
                         let should_shuffle = self.queue.get_shuffle();
                         self.queue.clear();
@@ -400,17 +407,16 @@ impl MprisPlayer {
                 }
             }
             Some(UriType::Track) => {
-                if let Some(t) = self.spotify.api.track(&id) {
+                if let Ok(t) = self.spotify.api.track(&id) {
                     self.queue.clear();
                     self.queue.append(Playable::Track(Track::from(&t)));
                     self.queue.play(0, false, false)
                 }
             }
             Some(UriType::Playlist) => {
-                if let Some(p) = self.spotify.api.playlist(&id) {
+                if let Ok(p) = self.spotify.api.playlist(&id) {
                     let mut playlist = Playlist::from(&p);
-                    let spotify = self.spotify.clone();
-                    playlist.load_tracks(spotify);
+                    playlist.load_tracks(&self.spotify);
                     if let Some(tracks) = &playlist.tracks {
                         let should_shuffle = self.queue.get_shuffle();
                         self.queue.clear();
@@ -420,7 +426,7 @@ impl MprisPlayer {
                 }
             }
             Some(UriType::Show) => {
-                if let Some(s) = self.spotify.api.get_show(&id) {
+                if let Ok(s) = self.spotify.api.show(&id) {
                     let mut show: Show = (&s).into();
                     let spotify = self.spotify.clone();
                     show.load_all_episodes(spotify);
@@ -439,14 +445,14 @@ impl MprisPlayer {
                 }
             }
             Some(UriType::Episode) => {
-                if let Some(e) = self.spotify.api.episode(&id) {
+                if let Ok(e) = self.spotify.api.episode(&id) {
                     self.queue.clear();
                     self.queue.append(Playable::Episode(Episode::from(&e)));
                     self.queue.play(0, false, false)
                 }
             }
             Some(UriType::Artist) => {
-                if let Some(a) = self.spotify.api.artist_top_tracks(&id) {
+                if let Ok(a) = self.spotify.api.artist_top_tracks(&id) {
                     let should_shuffle = self.queue.get_shuffle();
                     self.queue.clear();
                     let index = self.queue.append_next(
@@ -462,8 +468,25 @@ impl MprisPlayer {
     }
 }
 
+/// Commands to control the [MprisManager] worker thread.
+#[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
+pub enum MprisCommand {
+    /// Emit playback status
+    EmitPlaybackStatus,
+    /// Emit volume
+    EmitVolumeStatus,
+    /// Emit metadata
+    EmitMetadataStatus,
+    /// Emit seeked position
+    EmitSeekedStatus(i64),
+}
+
+/// An MPRIS server that internally manager a thread which can be sent commands. This is internally
+/// shared and cloning it will yield a reference to the same server.
+#[derive(Clone)]
 pub struct MprisManager {
-    tx: mpsc::UnboundedSender<()>,
+    tx: mpsc::UnboundedSender<MprisCommand>,
 }
 
 impl MprisManager {
@@ -481,7 +504,7 @@ impl MprisManager {
             spotify,
         };
 
-        let (tx, rx) = mpsc::unbounded_channel::<()>();
+        let (tx, rx) = mpsc::unbounded_channel::<MprisCommand>();
 
         ASYNC_RUNTIME.get().unwrap().spawn(async {
             let result = Self::serve(UnboundedReceiverStream::new(rx), root, player).await;
@@ -494,11 +517,11 @@ impl MprisManager {
     }
 
     async fn serve(
-        mut rx: UnboundedReceiverStream<()>,
+        mut rx: UnboundedReceiverStream<MprisCommand>,
         root: MprisRoot,
         player: MprisPlayer,
     ) -> Result<(), Box<dyn Error + Sync + Send>> {
-        let conn = ConnectionBuilder::session()?
+        let conn = connection::Builder::session()?
             .name(instance_bus_name())?
             .serve_at("/org/mpris/MediaPlayer2", root)?
             .serve_at("/org/mpris/MediaPlayer2", player)?
@@ -512,15 +535,30 @@ impl MprisManager {
         let player_iface = player_iface_ref.get().await;
 
         loop {
-            rx.next().await;
-            let ctx = player_iface_ref.signal_context();
-            player_iface.playback_status_changed(ctx).await?;
-            player_iface.metadata_changed(ctx).await?;
+            let ctx = player_iface_ref.signal_emitter();
+            match rx.next().await {
+                Some(MprisCommand::EmitPlaybackStatus) => {
+                    player_iface.playback_status_changed(ctx).await?;
+                }
+                Some(MprisCommand::EmitVolumeStatus) => {
+                    info!("sending MPRIS volume update signal");
+                    player_iface.volume_changed(ctx).await?;
+                }
+                Some(MprisCommand::EmitMetadataStatus) => {
+                    player_iface.metadata_changed(ctx).await?;
+                }
+                Some(MprisCommand::EmitSeekedStatus(pos)) => {
+                    info!("sending MPRIS seeked signal");
+                    MprisPlayer::seeked(ctx, &pos).await?;
+                }
+                None => break,
+            }
         }
+        Err("MPRIS server command channel closed".into())
     }
 
-    pub fn update(&self) {
-        if let Err(e) = self.tx.send(()) {
+    pub fn send(&self, command: MprisCommand) {
+        if let Err(e) = self.tx.send(command) {
             log::warn!("Could not update MPRIS state: {e}");
         }
     }
@@ -528,7 +566,7 @@ impl MprisManager {
 
 /// Get the D-Bus bus name for this instance according to the MPRIS specification.
 ///
-/// https://specifications.freedesktop.org/mpris-spec/2.2/#Bus-Name-Policy
+/// <https://specifications.freedesktop.org/mpris-spec/2.2/#Bus-Name-Policy>
 pub fn instance_bus_name() -> String {
     format!(
         "org.mpris.MediaPlayer2.ncspot.instance{}",

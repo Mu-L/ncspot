@@ -29,7 +29,7 @@ pub struct Playlist {
 }
 
 impl Playlist {
-    pub fn load_tracks(&mut self, spotify: Spotify) {
+    pub fn load_tracks(&mut self, spotify: &Spotify) {
         if self.tracks.is_some() {
             return;
         }
@@ -37,7 +37,7 @@ impl Playlist {
         self.tracks = Some(self.get_all_tracks(spotify));
     }
 
-    fn get_all_tracks(&self, spotify: Spotify) -> Vec<Playable> {
+    fn get_all_tracks(&self, spotify: &Spotify) -> Vec<Playable> {
         let tracks_result = spotify.api.user_playlist_tracks(&self.id);
         while !tracks_result.at_end() {
             tracks_result.next();
@@ -67,6 +67,7 @@ impl Playlist {
         match spotify
             .api
             .delete_tracks(&self.id, &self.snapshot_id, &[playable])
+            .is_ok()
         {
             false => false,
             true => {
@@ -83,7 +84,11 @@ impl Playlist {
     pub fn append_tracks(&mut self, new_tracks: &[Playable], spotify: &Spotify, library: &Library) {
         let mut has_modified = false;
 
-        if spotify.api.append_tracks(&self.id, new_tracks, None) {
+        if spotify
+            .api
+            .append_tracks(&self.id, new_tracks, None)
+            .is_ok()
+        {
             if let Some(tracks) = &mut self.tracks {
                 tracks.append(&mut new_tracks.to_vec());
                 has_modified = true;
@@ -221,7 +226,7 @@ impl ListItem for Playlist {
     }
 
     fn play(&mut self, queue: &Queue) {
-        self.load_tracks(queue.get_spotify());
+        self.load_tracks(&queue.get_spotify());
 
         if let Some(tracks) = &self.tracks {
             let index = queue.append_next(tracks);
@@ -230,7 +235,7 @@ impl ListItem for Playlist {
     }
 
     fn play_next(&mut self, queue: &Queue) {
-        self.load_tracks(queue.get_spotify());
+        self.load_tracks(&queue.get_spotify());
 
         if let Some(tracks) = self.tracks.as_ref() {
             for track in tracks.iter().rev() {
@@ -240,7 +245,7 @@ impl ListItem for Playlist {
     }
 
     fn queue(&mut self, queue: &Queue) {
-        self.load_tracks(queue.get_spotify());
+        self.load_tracks(&queue.get_spotify());
 
         if let Some(tracks) = self.tracks.as_ref() {
             for track in tracks.iter() {
@@ -258,12 +263,12 @@ impl ListItem for Playlist {
         if library.is_saved_playlist(self) {
             library.delete_playlist(&self.id);
         } else {
-            library.follow_playlist(self);
+            library.follow_playlist(self.clone());
         }
     }
 
     fn save(&mut self, library: &Library) {
-        library.follow_playlist(self);
+        library.follow_playlist(self.clone());
     }
 
     fn unsave(&mut self, library: &Library) {
@@ -279,7 +284,7 @@ impl ListItem for Playlist {
         queue: Arc<Queue>,
         library: Arc<Library>,
     ) -> Option<Box<dyn ViewExt>> {
-        self.load_tracks(queue.get_spotify());
+        self.load_tracks(&queue.get_spotify());
         const MAX_SEEDS: usize = 5;
         let track_ids: Vec<String> = self
             .tracks
@@ -304,6 +309,7 @@ impl ListItem for Playlist {
                 None,
                 Some(track_ids.iter().map(|t| t.as_ref()).collect()),
             )
+            .ok()
             .map(|r| r.tracks)
             .map(|tracks| tracks.iter().map(Track::from).collect());
 

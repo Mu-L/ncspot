@@ -26,11 +26,11 @@ free accounts.
 - Support for a lot of platforms
 - Vim keybindings out of the box
 - IPC socket for remote control
-- Automatic authentication using a password manager
 
 ## Installation
-ncspot is available on macOS (Homebrew), Windows (Scoop), Linux (native package and Flathub) and the
-BSD's. Detailed installation instructions for each platform can be found [here](/doc/users.md).
+ncspot is available on macOS (Homebrew), Windows (Scoop, WinGet), Linux (native package, Flathub and
+Snapcraft) and the BSD's. Detailed installation instructions for each platform can be found
+[here](/doc/users.md).
 
 ## Configuration
 A configuration file can be provided. The default location is `~/.config/ncspot`. Detailed

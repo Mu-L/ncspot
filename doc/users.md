@@ -17,9 +17,16 @@ brew install ncspot
 scoop install ncspot
 ```
 
+or via [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):
+
+```powershell
+winget install hrkfdn.ncspot
+```
+
 ### On Linux
 <div>
 <a href="https://flathub.org/apps/details/io.github.hrkfdn.ncspot"><img width="130" alt="Download on Flathub" src="https://flathub.org/assets/badges/flathub-badge-en.png"/></a>
+<a href="https://snapcraft.io/ncspot"><img alt="Download on Snapcraft" src="https://snapcraft.io//ncspot/badge.svg"/></a>
 </div>
 
 Your distribution may have packaged `ncspot` in its package repository.
@@ -250,7 +257,7 @@ Possible configuration values are:
 | `bitrate`                       | Audio bitrate to use for streaming                             | `96`, `160`, `320`                                                                    | `320`               |
 | `gapless`                       | Enable gapless playback                                        | `true`, `false`                                                                       | `true`              |
 | `shuffle`                       | Set default shuffle state                                      | `true`, `false`                                                                       | `false`             |
-| `repeat`                        | Set default repeat mode                                        | `off`, `track`, `playlist`                                                            | `off`               |
+| `repeat`                        | Set default repeat mode                                        | `"off"`, `"track"`, `"playlist"`                                                      | `"off"`             |
 | `playback_state`                | Set default playback state                                     | `"Stopped"`, `"Paused"`, `"Playing"`, `"Default"`                                     | `"Paused"`          |
 | `library_tabs`                  | Tabs to show in library screen                                 | Array of `"tracks"`, `"albums"`, `"artists"`, `"playlists"`, `"podcasts"`, `"browse"` | All tabs            |
 | `cover_max_scale`<sup>[1]</sup> | Set maximum scaling ratio for cover art                        | Number                                                                                | `1.0`               |
@@ -260,6 +267,7 @@ Possible configuration values are:
 | `[notification_format]`         | Set the text displayed in notifications<sup>[4]</sup>          | See [notification formatting](#notification-formatting)                               |                     |
 | `[theme]`                       | Custom theme                                                   | See [custom theme](#theming)                                                          |                     |
 | `[keybindings]`                 | Custom keybindings                                             | See [custom keybindings](#custom-keybindings)                                         |                     |
+| `ap_port`                       | Set ap-port for librespot (for restrictive firewalls)          | `80`, `443`, `4070`                                                                   |                     |
 
 1. If built with the `cover` feature.
 2. By default the statusbar will show a play icon when a track is playing and
@@ -353,8 +361,9 @@ It's possible to customize how tracks are shown in Queue/Library views and the
 statusbar, whereas `statusbar_format` will hold the statusbar formatting and
 `[track_format]` the formatting for tracks in list views.
 If you don't define `center` for example, the default value will be used.
-Available options for tracks: `%artists`, `%title`, `%album`, `%saved`,
-`%duration`
+Available options for tracks: `%artists`, `%artist`, `%title`, `%album`, `%saved`,
+`%duration`.
+`%artists` will show all contributing artists, while `%artist` only shows the first listed artist.
 
 Default configuration:
 
@@ -443,25 +452,13 @@ cover_max_scale = 2
 ```
 
 ## Authentication
-`ncspot` prompts for a Spotify username and password on first launch, uses this
-to generate an OAuth token, and stores it to disk.
+`ncspot` uses OAuth2 for authentication. When launched for the first time, a link will be generated
+that can be opened in any browser. After logging in on the displayed page, you can start to use
+`ncspot`. The OAuth2 flow is the only supported one, as username/password authentication has been
+removed by Spotify.
 
 The credentials are stored in `librespot/credentials.json` in the user's cache directory. Run
 `ncspot info` to show the location of this directory.
 
 The `logout` command can be used to remove cached credentials. See
 [Vim-Like Commands](#vim-like-commands).
-
-### Using a Password Manager
-If you would like ncspot to retrieve your login data from command results,
-i.e. because you use a password manager like `pass`, you can add the following
-configuration:
-
-```toml
-[credentials]
-username_cmd = "echo username"
-password_cmd = "pass spotify.com/username"
-```
-
-Do note that this is only required for the initial login or when your credential
-token has expired.

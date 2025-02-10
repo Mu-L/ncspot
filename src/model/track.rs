@@ -249,18 +249,18 @@ impl ListItem for Track {
 
     fn toggle_saved(&mut self, library: &Library) {
         if library.is_saved_track(&Playable::Track(self.clone())) {
-            library.unsave_tracks(vec![self], true);
+            library.unsave_tracks(&[self]);
         } else {
-            library.save_tracks(vec![self], true);
+            library.save_tracks(&[self]);
         }
     }
 
     fn save(&mut self, library: &Library) {
-        library.save_tracks(vec![self], true);
+        library.save_tracks(&[self]);
     }
 
     fn unsave(&mut self, library: &Library) {
-        library.unsave_tracks(vec![self], true);
+        library.unsave_tracks(&[self]);
     }
 
     fn open(&self, _queue: Arc<Queue>, _library: Arc<Library>) -> Option<Box<dyn ViewExt>> {
@@ -278,6 +278,7 @@ impl ListItem for Track {
             spotify
                 .api
                 .recommendations(None, None, Some(vec![id]))
+                .ok()
                 .map(|r| r.tracks)
                 .map(|tracks| tracks.iter().map(Self::from).collect())
         } else {
@@ -309,7 +310,7 @@ impl ListItem for Track {
         let spotify = queue.get_spotify();
 
         match self.album_id {
-            Some(ref album_id) => spotify.api.album(album_id).map(|ref fa| fa.into()),
+            Some(ref album_id) => spotify.api.album(album_id).map(|ref fa| fa.into()).ok(),
             None => None,
         }
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::enum_glob_use)]
+
 use cursive::theme::BaseColor::*;
 use cursive::theme::Color::*;
 use cursive::theme::PaletteColor::*;
@@ -6,6 +8,17 @@ use log::warn;
 
 use crate::config::ConfigTheme;
 
+/// Get the given color from the given [ConfigTheme]. The first argument is the [ConfigTheme] to get
+/// the color out of. The second argument is the name of the color to get and is an identifier. The
+/// third argument is a [Color] that is used as the default when no color can be parsed from the
+/// provided [ConfigTheme].
+///
+/// # Examples
+///
+/// ```rust
+/// load_color!(config_theme, background, TerminalDefault)
+/// load_color!(config_theme, primary, TerminalDefault)
+/// ```
 macro_rules! load_color {
     ( $theme: expr, $member: ident, $default: expr ) => {
         $theme
@@ -22,6 +35,7 @@ macro_rules! load_color {
     };
 }
 
+/// Create a [cursive::theme::Theme] from `theme_cfg`.
 pub fn load(theme_cfg: &Option<ConfigTheme>) -> Theme {
     let mut palette = Palette::default();
     let borders = BorderStyle::Simple;
